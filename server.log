@@ -1,0 +1,27 @@
+2026-01-09 08:41:47,100 WARNING LOGIN_FAIL ip=127.0.0.1 email=guyshalom147258@gmail.com
+2026-01-09 08:41:55,793 WARNING LOGIN_FAIL ip=127.0.0.1 email=guyshalom147258@gmail.com
+2026-01-09 08:42:05,637 WARNING LOGIN_FAIL ip=127.0.0.1 email=hcjndndndnndn@gmail.com
+2026-01-09 08:42:24,498 INFO SIGNUP ip=127.0.0.1 email=guyshalom147258@gmail.com
+2026-01-09 08:42:37,142 INFO OTP_SENT ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
+2026-01-09 08:42:44,207 INFO LOGIN_OK ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
+2026-01-09 08:44:09,793 WARNING LOGIN_FAIL ip=127.0.0.1 email=danielmatok1@gmail.com
+2026-01-09 08:44:38,713 INFO SIGNUP ip=127.0.0.1 email=danielmatok1@gmail.com
+2026-01-09 08:44:57,711 INFO OTP_SENT ip=127.0.0.1 email=danielmatok1@gmail.com user_id=2
+2026-01-09 08:45:09,043 INFO LOGIN_OK ip=127.0.0.1 email=danielmatok1@gmail.com user_id=2
+2026-01-09 09:23:19,115 INFO OTP_SENT ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
+2026-01-09 09:23:28,541 INFO LOGIN_OK ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
+2026-01-13 11:00:58,122 WARNING LOGIN_FAIL ip=127.0.0.1 email=guyshalom147258@gmail.com
+2026-01-13 11:01:42,633 INFO SIGNUP ip=127.0.0.1 email=guyshalom147258@gmail.com
+2026-01-13 11:01:55,760 INFO OTP_SENT ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
+2026-01-13 11:02:02,873 INFO LOGIN_OK ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
+2026-01-13 11:15:51,339 INFO OTP_SENT ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
+2026-01-13 11:16:00,224 INFO LOGIN_OK ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
+2026-01-13 11:17:16,546 INFO SIGNUP ip=127.0.0.1 email=danielmatok1@gmail.com
+2026-01-13 11:17:28,921 INFO OTP_SENT ip=127.0.0.1 email=danielmatok1@gmail.com user_id=2
+2026-01-13 11:17:40,771 INFO LOGIN_OK ip=127.0.0.1 email=danielmatok1@gmail.com user_id=2
+2026-01-13 11:19:22,142 INFO OTP_SENT ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
+2026-01-13 11:19:33,755 INFO LOGIN_OK ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
+2026-01-13 11:21:16,220 INFO OTP_SENT ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
+2026-01-13 11:21:28,349 INFO LOGIN_OK ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
+2026-01-16 10:44:11,431 INFO OTP_SENT ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
+2026-01-16 10:44:22,426 INFO LOGIN_OK ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
