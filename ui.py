@@ -558,6 +558,7 @@ class App:
 
         code_entry.focus_set()
 
+
     def reset_finish(self):
         code = (self.reset_code_var.get() or "").strip()
         pw1 = self.reset_pw1_var.get()
