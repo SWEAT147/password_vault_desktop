@@ -36,7 +36,7 @@ def init_db():
         vault_salt TEXT NOT NULL,
         encrypted_vault_key TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )
+    ) 
     """)
     # add sharing key columns if upgrading from older DB
     _add_column_if_missing(db, "users", "public_key_pem TEXT")
