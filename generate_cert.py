@@ -1,4 +1,6 @@
+# generate_cert.py
 import os
+import ipaddress
 from datetime import datetime, timedelta
 
 from cryptography import x509
@@ -34,7 +36,7 @@ def ensure_certs(out_dir="certs"):
         .add_extension(
             x509.SubjectAlternativeName([
                 x509.DNSName("localhost"),
-                x509.DNSName("127.0.0.1"),
+                x509.IPAddress(ipaddress.ip_address("127.0.0.1")),
             ]),
             critical=False,
         )

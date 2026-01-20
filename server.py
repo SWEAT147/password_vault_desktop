@@ -1,9 +1,11 @@
+# server.py
 import os
 import ssl
 import socket
 import threading
 import secrets
 import logging
+from logging.handlers import RotatingFileHandler
 from datetime import datetime, timedelta
 
 from protocol import send_msg, recv_msg
@@ -19,6 +21,9 @@ from generate_cert import ensure_certs
 
 HOST = "127.0.0.1"
 PORT = 5050
+
+# ENV FLAGS
+DEV_MODE = os.getenv("DEV_MODE", "0") == "1"
 
 # -------- security policy --------
 LOGIN_MAX_ATTEMPTS = 5
@@ -144,10 +149,28 @@ def drop_session(token: str):
         _sessions.pop(token, None)
 
 
+# ----- OTP delivery stub -----
+def deliver_otp(email: str, code: str):
+    """
+    Production: send email/SMS (not implemented here).
+    DEV: log/print only.
+    """
+    if DEV_MODE:
+        logging.info("DEV OTP for %s = %s", email, code)
+    # In production you would integrate an email/SMS provider here.
+
+
+def deliver_reset_code(email: str, code: str):
+    if DEV_MODE:
+        logging.info("DEV RESET for %s = %s", email, code)
+    # Production provider hook here.
+
+
 def handle_client(conn: ssl.SSLSocket, addr):
     ip = get_ip(addr)
 
     try:
+        conn.settimeout(15.0)
         while True:
             req = recv_msg(conn)
             action = req.get("action")
@@ -161,8 +184,12 @@ def handle_client(conn: ssl.SSLSocket, addr):
                 email = (req.get("email") or "").strip().lower()
                 pw = req.get("password") or ""
 
+                # stronger baseline policy
                 if not full_name or not email or not pw:
                     reply(conn, req, {"ok": False, "error": "Missing fields"})
+                    continue
+                if len(pw) < 12:
+                    reply(conn, req, {"ok": False, "error": "Password too short (min 12)"})
                     continue
 
                 db = connect()
@@ -233,10 +260,14 @@ def handle_client(conn: ssl.SSLSocket, addr):
                 db.commit()
                 db.close()
 
+                deliver_otp(email, code)
                 logging.info("OTP_SENT ip=%s email=%s user_id=%s", ip, email, u["id"])
 
-                # DEV: returning OTP to client
-                reply(conn, req, {"ok": True, "user_id": u["id"], "otp": code})
+                # DEV mode can return OTP to client for easy testing
+                payload = {"ok": True, "user_id": u["id"]}
+                if DEV_MODE:
+                    payload["otp"] = code
+                reply(conn, req, payload)
 
             # =========================
             # LOGIN VERIFY (OTP)
@@ -278,7 +309,6 @@ def handle_client(conn: ssl.SSLSocket, addr):
                 db.execute("DELETE FROM otp_codes WHERE user_id=?", (uid,))
                 audit(db, uid, "otp_ok_login", None, ip)
 
-                # include sharing key material if exists
                 k = db.execute(
                     "SELECT public_key_pem, encrypted_private_key FROM users WHERE id=?",
                     (u["id"],)
@@ -302,7 +332,7 @@ def handle_client(conn: ssl.SSLSocket, addr):
                 })
 
             # =========================
-            # PASSWORD RESET (DEV)
+            # PASSWORD RESET
             # =========================
             elif action == "reset_start":
                 email = (req.get("email") or "").strip().lower()
@@ -329,8 +359,12 @@ def handle_client(conn: ssl.SSLSocket, addr):
                 db.commit()
                 db.close()
 
-                # DEV: return code to client
-                reply(conn, req, {"ok": True, "reset_code": code})
+                deliver_reset_code(email, code)
+
+                payload = {"ok": True}
+                if DEV_MODE:
+                    payload["reset_code"] = code
+                reply(conn, req, payload)
 
             elif action == "reset_finish":
                 email = (req.get("email") or "").strip().lower()
@@ -369,13 +403,12 @@ def handle_client(conn: ssl.SSLSocket, addr):
                     reply(conn, req, {"ok": False, "error": "Invalid/expired code"})
                     continue
 
-                # update user password + vault metadata
                 db.execute(
                     "UPDATE users SET password_hash=?, vault_salt=?, encrypted_vault_key=? WHERE email=?",
                     (new_password_hash, new_vault_salt, new_encrypted_vault_key, email)
                 )
 
-                # IMPORTANT: cannot recover old vault -> wipe entries
+                # cannot recover old vault -> wipe entries
                 db.execute("DELETE FROM entries WHERE user_id=?", (u["id"],))
 
                 db.execute("DELETE FROM password_resets WHERE email=?", (email,))
@@ -394,7 +427,6 @@ def handle_client(conn: ssl.SSLSocket, addr):
                 "keys_set", "keys_get_public",
                 "share_vault_create", "share_vault_list", "share_vault_entries"
             }:
-                # logout is allowed even if token expired - just drop if exists
                 if action == "logout":
                     drop_session(token)
                     reply(conn, req, {"ok": True})
@@ -406,9 +438,7 @@ def handle_client(conn: ssl.SSLSocket, addr):
                     continue
 
                 user_id = s["user_id"]
-                role = s["role"]
 
-                # ----- entries_list -----
                 if action == "entries_list":
                     db = connect()
                     rows = db.execute(
@@ -419,11 +449,8 @@ def handle_client(conn: ssl.SSLSocket, addr):
                     audit(db, user_id, "entries_list", f"count={len(rows)}", ip)
                     db.commit()
                     db.close()
+                    reply(conn, req, {"ok": True, "entries": [dict(r) for r in rows]})
 
-                    out = [dict(r) for r in rows]
-                    reply(conn, req, {"ok": True, "entries": out})
-
-                # ----- entry_create (ciphertext only) -----
                 elif action == "entry_create":
                     title = (req.get("title") or "").strip()
                     username = (req.get("username") or "").strip()
@@ -432,7 +459,6 @@ def handle_client(conn: ssl.SSLSocket, addr):
                     if not title or not username or not enc_pw:
                         reply(conn, req, {"ok": False, "error": "Missing fields"})
                         continue
-
                     if len(title) > 120 or len(username) > 200 or len(enc_pw) > 10000:
                         reply(conn, req, {"ok": False, "error": "Input too long"})
                         continue
@@ -445,10 +471,8 @@ def handle_client(conn: ssl.SSLSocket, addr):
                     audit(db, user_id, "entry_create", f"title={title}", ip)
                     db.commit()
                     db.close()
-
                     reply(conn, req, {"ok": True})
 
-                # ----- entry_update -----
                 elif action == "entry_update":
                     entry_id = req.get("id")
                     title = (req.get("title") or "").strip()
@@ -467,10 +491,8 @@ def handle_client(conn: ssl.SSLSocket, addr):
                     audit(db, user_id, "entry_update", f"id={entry_id}", ip)
                     db.commit()
                     db.close()
-
                     reply(conn, req, {"ok": True})
 
-                # ----- entry_delete -----
                 elif action == "entry_delete":
                     entry_id = req.get("id")
                     if not entry_id:
@@ -482,10 +504,8 @@ def handle_client(conn: ssl.SSLSocket, addr):
                     audit(db, user_id, "entry_delete", f"id={entry_id}", ip)
                     db.commit()
                     db.close()
-
                     reply(conn, req, {"ok": True})
 
-                # ----- change_password (re-wrap vault key; keep entries) -----
                 elif action == "change_password":
                     new_password_hash = (req.get("new_password_hash") or "").strip()
                     new_vault_salt = (req.get("new_vault_salt") or "").strip()
@@ -505,7 +525,6 @@ def handle_client(conn: ssl.SSLSocket, addr):
                     db.close()
                     reply(conn, req, {"ok": True})
 
-                # ----- keys_set (store public + encrypted private) -----
                 elif action == "keys_set":
                     pub = (req.get("public_key_pem") or "")
                     enc_priv = (req.get("encrypted_private_key") or "")
@@ -513,8 +532,6 @@ def handle_client(conn: ssl.SSLSocket, addr):
                     if not pub or not enc_priv:
                         reply(conn, req, {"ok": False, "error": "Missing fields"})
                         continue
-
-                    # basic size sanity
                     if len(pub) > 5000 or len(enc_priv) > 30000:
                         reply(conn, req, {"ok": False, "error": "Input too long"})
                         continue
@@ -527,10 +544,8 @@ def handle_client(conn: ssl.SSLSocket, addr):
                     audit(db, user_id, "keys_set", None, ip)
                     db.commit()
                     db.close()
-
                     reply(conn, req, {"ok": True})
 
-                # ----- keys_get_public (get receiver public key by email) -----
                 elif action == "keys_get_public":
                     email = (req.get("email") or "").strip().lower()
                     if not email:
@@ -547,7 +562,6 @@ def handle_client(conn: ssl.SSLSocket, addr):
 
                     reply(conn, req, {"ok": True, "public_key_pem": u["public_key_pem"]})
 
-                # ----- share_vault_create (wrap owner's vault_key for receiver) -----
                 elif action == "share_vault_create":
                     to_email = (req.get("to_email") or "").strip().lower()
                     enc_for_receiver = (req.get("enc_vault_key_for_receiver") or "").strip()
@@ -555,7 +569,6 @@ def handle_client(conn: ssl.SSLSocket, addr):
                     if not to_email or not enc_for_receiver:
                         reply(conn, req, {"ok": False, "error": "Missing fields"})
                         continue
-
                     if len(enc_for_receiver) > 20000:
                         reply(conn, req, {"ok": False, "error": "Input too long"})
                         continue
@@ -575,10 +588,8 @@ def handle_client(conn: ssl.SSLSocket, addr):
                     audit(db, user_id, "share_vault_create", f"to={to_email}", ip)
                     db.commit()
                     db.close()
-
                     reply(conn, req, {"ok": True})
 
-                # ----- share_vault_list (vaults shared with me) -----
                 elif action == "share_vault_list":
                     db = connect()
                     rows = db.execute(
@@ -588,11 +599,8 @@ def handle_client(conn: ssl.SSLSocket, addr):
                         (user_id,)
                     ).fetchall()
                     db.close()
+                    reply(conn, req, {"ok": True, "shared": [dict(r) for r in rows]})
 
-                    out = [dict(r) for r in rows]
-                    reply(conn, req, {"ok": True, "shared": out})
-
-                # ----- share_vault_entries (read owner's entries if shared) -----
                 elif action == "share_vault_entries":
                     owner_id = req.get("owner_id")
                     if not owner_id:
@@ -614,56 +622,4 @@ def handle_client(conn: ssl.SSLSocket, addr):
                         (owner_id,)
                     ).fetchall()
                     db.close()
-
-                    out = [dict(r) for r in rows]
-                    reply(conn, req, {"ok": True, "entries": out})
-
-                else:
-                    reply(conn, req, {"ok": False, "error": "Unhandled action"})
-            else:
-                reply(conn, req, {"ok": False, "error": f"Unknown action: {action}"})
-
-    except Exception:
-        # silent drop on disconnect / bad client
-        pass
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
-
-
-def main():
-    init_db()
-
-    logging.basicConfig(
-        filename="server.log",
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s"
-    )
-
-    crt, key = ensure_certs()
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    context.load_cert_chain(crt, key)
-
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind((HOST, PORT))
-    sock.listen(50)
-
-    print(f"Server listening on {HOST}:{PORT}")
-
-    while True:
-        client_sock, addr = sock.accept()
-        try:
-            tls_conn = context.wrap_socket(client_sock, server_side=True)
-        except Exception:
-            client_sock.close()
-            continue
-
-        t = threading.Thread(target=handle_client, args=(tls_conn, addr), daemon=True)
-        t.start()
-
-
-if __name__ == "__main__":
-    main()
+                    reply(conn, req, {"ok": True,
