@@ -3,7 +3,7 @@ import socket
 import struct
 from typing import Any, Dict
 
-MAX_MSG = 2_000_000  # 2MB safety
+MAX_MSG = 2_000_000  # 2MB
 
 
 def send_msg(sock: socket.socket, obj: Dict[str, Any]) -> None:

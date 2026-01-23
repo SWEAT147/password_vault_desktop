@@ -1,12 +1,13 @@
 # db.py
 import sqlite3
 
-# IMPORTANT: must match what server.py uses
 DB_PATH = "vault_server.db"
 
 
 def connect():
-    conn = sqlite3.connect(DB_PATH)
+    # For a threaded server, allow usage across threads.
+    # Each request should still use its own connection.
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -36,9 +37,9 @@ def init_db():
         vault_salt TEXT NOT NULL,
         encrypted_vault_key TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    ) 
+    )
     """)
-    # add sharing key columns if upgrading from older DB
+    # sharing key columns (upgrade-safe)
     _add_column_if_missing(db, "users", "public_key_pem TEXT")
     _add_column_if_missing(db, "users", "encrypted_private_key TEXT")
 
@@ -53,7 +54,7 @@ def init_db():
     )
     """)
 
-    # ---------- ENTRIES (ciphertext only) ----------
+    # ---------- ENTRIES ----------
     db.execute("""
     CREATE TABLE IF NOT EXISTS entries (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -85,7 +86,7 @@ def init_db():
     )
     """)
 
-    # ---------- PASSWORD RESET (DEV MODE) ----------
+    # ---------- PASSWORD RESET ----------
     db.execute("""
     CREATE TABLE IF NOT EXISTS password_resets (
         email TEXT PRIMARY KEY,
@@ -95,7 +96,7 @@ def init_db():
     )
     """)
 
-    # ---------- VAULT SHARES (whole vault sharing) ----------
+    # ---------- VAULT SHARES ----------
     db.execute("""
     CREATE TABLE IF NOT EXISTS vault_shares (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,7 +108,7 @@ def init_db():
     )
     """)
 
-    # Helpful indexes (safe even if they already exist)
+    # Helpful indexes
     db.execute("CREATE INDEX IF NOT EXISTS idx_entries_user_id ON entries(user_id)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_shares_shared_with ON vault_shares(shared_with_id)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_shares_owner ON vault_shares(owner_id)")

@@ -7,13 +7,11 @@ import json
 import os
 
 from security import (
-    # auth + vault
     hash_master_password,
     derive_fernet_from_password,
     encrypt_with_derived,
     decrypt_with_derived,
     generate_vault_key,
-    # e2ee entries encrypt/decrypt helpers
     encrypt_entry_password,
     decrypt_entry_password,
 )
@@ -114,11 +112,9 @@ def make_watermark_entry(parent, placeholder: str, *, is_password: bool = False,
         font=FONT_ENTRY,
     )
 
-    # password masking default
     if is_password:
         entry.config(show="*")
 
-    # layout: entry takes full width minus padding and optional eye button
     right_pad = EYE_W if (is_password and show_toggle) else 0
     entry.place(
         x=PAD_X,
@@ -157,7 +153,6 @@ def make_watermark_entry(parent, placeholder: str, *, is_password: bool = False,
     entry.bind("<FocusIn>", on_focus_in)
     entry.bind("<FocusOut>", on_focus_out)
 
-    # eye toggle
     if is_password and show_toggle:
         state = {"shown": False}
 
@@ -272,17 +267,20 @@ class App:
 
         # session
         self.session_user_id = None
-        self.session_password = None  # master password (kept only while app open)
-        self.session_token = None     # server token after OTP verify
+        self.session_password = None  # kept only while app open (to unwrap vault key)
+        self.session_token = None
         self.user_email = None
         self.user_role = None
 
         # E2EE
-        self.vault_key = None  # decrypted locally after OTP (E2EE)
+        self.vault_key = None
 
         # Sharing keys (RSA)
-        self.public_key_pem = None      # bytes
-        self.private_key_pem = None     # bytes (decrypted locally)
+        self.public_key_pem = None
+        self.private_key_pem = None
+
+        # reset flow
+        self.reset_email = None
 
         self.frame = tk.Frame(root, bg=BG)
         self.frame.pack(fill="both", expand=True)
@@ -312,11 +310,10 @@ class App:
 
     def _ensure_rsa_keys(self, server_pub_str, server_enc_priv_hex):
         """
-        Ensure we have an RSA keypair for vault sharing.
+        Ensure RSA keypair exists for vault sharing.
         - If server already has keys: decrypt private key using vault_key
         - Else: generate, encrypt private with vault_key, upload
         """
-        # server already has key material
         if server_pub_str and server_enc_priv_hex:
             try:
                 self.public_key_pem = server_pub_str.encode("utf-8")
@@ -325,10 +322,8 @@ class App:
                 self.private_key_pem = priv_pem_str.encode("utf-8")
                 return
             except Exception:
-                # fall back to regenerate keys
                 pass
 
-        # generate new keys
         pub_pem, priv_pem = generate_rsa_keypair()
         self.public_key_pem = pub_pem
         self.private_key_pem = priv_pem
@@ -413,7 +408,7 @@ class App:
             messagebox.showerror("Error", res.get("error", "Signup failed"), parent=self.root)
             return
 
-        messagebox.showinfo("OK", "Account created.", parent=self.root)
+        messagebox.showinfo("OK", "Account created. Please login.", parent=self.root)
         self.show_login()
 
     # ================= LOGIN + OTP =================
@@ -439,18 +434,21 @@ class App:
             messagebox.showerror("Error", res.get("error", "Login failed"), parent=self.root)
             return
 
-        otp = res.get("otp")  # DEV
         self.session_user_id = res.get("user_id")
         self.session_password = pw
 
-        messagebox.showinfo("DEV OTP", f"OTP Code: {otp}", parent=self.root)
+        messagebox.showinfo(
+            "OTP sent",
+            "We sent a 6-digit OTP code to your email.\nPlease enter it to continue.",
+            parent=self.root
+        )
         self.show_otp()
 
     def show_otp(self):
         self.clear_panel()
 
         tk.Label(self.panel, text="OTP Verification", bg=PANEL, fg=TEXT, font=FONT_TITLE).pack(pady=(18, 6))
-        tk.Label(self.panel, text="Enter the 6-digit code", bg=PANEL, fg=MUTED, font=FONT_SUB).pack(pady=(0, 16))
+        tk.Label(self.panel, text="Enter the 6-digit code from your email", bg=PANEL, fg=MUTED, font=FONT_SUB).pack(pady=(0, 16))
 
         self.otp_boxes = make_otp_boxes(self.panel, digits=6)
         self.otp_boxes.pack(pady=10)
@@ -494,19 +492,18 @@ class App:
             messagebox.showerror("Error", f"Failed to unlock vault: {e}", parent=self.root)
             return
 
-        # sharing keys: ensure RSA keys exist and are usable
         server_pub = res.get("public_key_pem") or ""
         server_enc_priv = res.get("encrypted_private_key") or ""
         self._ensure_rsa_keys(server_pub, server_enc_priv)
 
         self.show_dashboard()
 
-    # ================= FORGOT PASSWORD (DEV) =================
+    # ================= FORGOT PASSWORD =================
     def show_reset_start(self):
         self.clear_panel()
 
         tk.Label(self.panel, text="Reset Password", bg=PANEL, fg=TEXT, font=FONT_TITLE).pack(pady=(18, 6))
-        tk.Label(self.panel, text="DEV mode: we'll show you a reset code", bg=PANEL, fg=MUTED, font=FONT_SUB).pack(pady=(0, 16))
+        tk.Label(self.panel, text="We will send you a reset code by email.", bg=PANEL, fg=MUTED, font=FONT_SUB).pack(pady=(0, 16))
 
         email_box, email_entry, self.reset_email_var = make_watermark_entry(self.panel, "Email")
         email_box.pack(pady=10, padx=30, fill="x")
@@ -532,8 +529,11 @@ class App:
             messagebox.showerror("Error", res.get("error", "Reset start failed"), parent=self.root)
             return
 
-        code = res.get("reset_code", "")
-        messagebox.showinfo("DEV reset code", f"Reset Code: {code}", parent=self.root)
+        messagebox.showinfo(
+            "Reset code sent",
+            "If the account exists, a reset code was sent to your email.\nEnter it on the next screen.",
+            parent=self.root
+        )
 
         self.reset_email = email
         self.show_reset_finish()
@@ -558,7 +558,6 @@ class App:
 
         code_entry.focus_set()
 
-
     def reset_finish(self):
         code = (self.reset_code_var.get() or "").strip()
         pw1 = self.reset_pw1_var.get()
@@ -570,15 +569,14 @@ class App:
         if pw1 != pw2:
             messagebox.showerror("Error", "Passwords do not match.", parent=self.root)
             return
-        if len(pw1) < 6:
-            messagebox.showerror("Error", "Password too short (min 6).", parent=self.root)
+        if len(pw1) < 12:
+            messagebox.showerror("Error", "Password too short (min 12).", parent=self.root)
             return
 
-        # Reset in E2EE: create a NEW vault_key, encrypt it with new password
         try:
             salt = os.urandom(16)
             derived = derive_fernet_from_password(pw1, salt)
-            new_vk = generate_vault_key()  # new vault contents -> old vault cannot be recovered
+            new_vk = generate_vault_key()
             enc_vk = encrypt_with_derived(derived, new_vk.encode()).hex()
             pw_hash = hash_master_password(pw1)
         except Exception as e:
@@ -618,17 +616,13 @@ class App:
         make_button(self.panel, "New Entry", command=self.new_entry, primary=True).pack(pady=8, padx=30, fill="x")
         make_button(self.panel, "My saved entries", command=self.show_entries).pack(pady=8, padx=30, fill="x")
 
-        # Backup
         make_button(self.panel, "Export Vault (encrypted backup)", command=self.export_vault).pack(pady=8, padx=30, fill="x")
         make_button(self.panel, "Import Vault (encrypted backup)", command=self.import_vault).pack(pady=8, padx=30, fill="x")
 
-
-        # Sharing
         make_button(self.panel, "Share my Vault", command=self.share_my_vault).pack(pady=8, padx=30, fill="x")
         make_button(self.panel, "Vaults shared with me", command=self.show_shared_vaults).pack(pady=8, padx=30, fill="x")
 
         make_button(self.panel, "Logout", command=self.logout, small=True).pack(pady=(14, 0))
-
 
     # ================= ENTRIES =================
     def show_entries(self):
@@ -885,7 +879,6 @@ class App:
 
             blob_bytes = bytes.fromhex(enc_hex)
 
-            # decrypt backup with current user's vault_key
             plaintext = decrypt_entry_password(self.vault_key, blob_bytes)
             data = json.loads(plaintext)
 
@@ -932,13 +925,11 @@ class App:
             return
         to_email = to_email.strip().lower()
 
-        # Ensure we have our private key locally (should, after login)
         if not self.private_key_pem or not self.public_key_pem:
             messagebox.showerror("Error", "Sharing keys not available. Try logout/login.", parent=self.root)
             return
 
         try:
-            # Fetch receiver public key
             res = self.net.request({
                 "action": "keys_get_public",
                 "session_token": self.session_token,
@@ -954,7 +945,6 @@ class App:
 
         receiver_pub_pem = res["public_key_pem"].encode("utf-8")
 
-        # Wrap (encrypt) my vault_key for receiver using receiver's public key
         try:
             wrapped = rsa_encrypt(receiver_pub_pem, self.vault_key.encode("utf-8"))
             wrapped_hex = wrapped.hex()
@@ -1046,7 +1036,6 @@ class App:
             messagebox.showerror("Error", "Missing private key for sharing. Try logout/login.", parent=self.root)
             return
 
-        # Decrypt wrapped vault key using my private RSA key
         try:
             wrapped = bytes.fromhex(enc_vault_key_hex)
             owner_vault_key = rsa_decrypt(self.private_key_pem, wrapped).decode("utf-8")
@@ -1054,7 +1043,6 @@ class App:
             messagebox.showerror("Error", f"Failed to open shared vault: {e}", parent=self.root)
             return
 
-        # Fetch owner's entries
         try:
             res = self.net.request({
                 "action": "share_vault_entries",
@@ -1132,14 +1120,15 @@ class App:
         except Exception:
             pass
 
+        # clear sensitive data
         self.session_user_id = None
         self.session_password = None
         self.session_token = None
         self.user_email = None
         self.user_role = None
         self.vault_key = None
-
         self.public_key_pem = None
         self.private_key_pem = None
+        self.reset_email = None
 
         self.show_login()
