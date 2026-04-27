@@ -1,43 +1,16 @@
-2026-01-09 08:41:47,100 WARNING LOGIN_FAIL ip=127.0.0.1 email=guyshalom147258@gmail.com
-2026-01-09 08:41:55,793 WARNING LOGIN_FAIL ip=127.0.0.1 email=guyshalom147258@gmail.com
-2026-01-09 08:42:05,637 WARNING LOGIN_FAIL ip=127.0.0.1 email=hcjndndndnndn@gmail.com
-2026-01-09 08:42:24,498 INFO SIGNUP ip=127.0.0.1 email=guyshalom147258@gmail.com
-2026-01-09 08:42:37,142 INFO OTP_SENT ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
-2026-01-09 08:42:44,207 INFO LOGIN_OK ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
-2026-01-09 08:44:09,793 WARNING LOGIN_FAIL ip=127.0.0.1 email=danielmatok1@gmail.com
-2026-01-09 08:44:38,713 INFO SIGNUP ip=127.0.0.1 email=danielmatok1@gmail.com
-2026-01-09 08:44:57,711 INFO OTP_SENT ip=127.0.0.1 email=danielmatok1@gmail.com user_id=2
-2026-01-09 08:45:09,043 INFO LOGIN_OK ip=127.0.0.1 email=danielmatok1@gmail.com user_id=2
-2026-01-09 09:23:19,115 INFO OTP_SENT ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
-2026-01-09 09:23:28,541 INFO LOGIN_OK ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
-2026-01-13 11:00:58,122 WARNING LOGIN_FAIL ip=127.0.0.1 email=guyshalom147258@gmail.com
-2026-01-13 11:01:42,633 INFO SIGNUP ip=127.0.0.1 email=guyshalom147258@gmail.com
-2026-01-13 11:01:55,760 INFO OTP_SENT ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
-2026-01-13 11:02:02,873 INFO LOGIN_OK ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
-2026-01-13 11:15:51,339 INFO OTP_SENT ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
-2026-01-13 11:16:00,224 INFO LOGIN_OK ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
-2026-01-13 11:17:16,546 INFO SIGNUP ip=127.0.0.1 email=danielmatok1@gmail.com
-2026-01-13 11:17:28,921 INFO OTP_SENT ip=127.0.0.1 email=danielmatok1@gmail.com user_id=2
-2026-01-13 11:17:40,771 INFO LOGIN_OK ip=127.0.0.1 email=danielmatok1@gmail.com user_id=2
-2026-01-13 11:19:22,142 INFO OTP_SENT ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
-2026-01-13 11:19:33,755 INFO LOGIN_OK ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
-2026-01-13 11:21:16,220 INFO OTP_SENT ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
-2026-01-13 11:21:28,349 INFO LOGIN_OK ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
-2026-01-16 10:44:11,431 INFO OTP_SENT ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
-2026-01-16 10:44:22,426 INFO LOGIN_OK ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
-2026-01-23 11:22:15,509 WARNING LOGIN_FAIL ip=127.0.0.1 email=guyshalom147258@gmail.com
-2026-01-23 11:22:22,137 WARNING LOGIN_FAIL ip=127.0.0.1 email=guyshalom147258@gmail.com
-2026-01-23 11:22:34,932 WARNING RESET_EMAIL_FAILED email=guyshalom147258@gmail.com err=EMAIL_ENABLED=0
-2026-01-23 11:23:18,457 INFO OTP_CREATED ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
-2026-01-23 11:23:18,457 WARNING OTP_EMAIL_FAILED email=guyshalom147258@gmail.com err=EMAIL_ENABLED=0
-2026-01-23 11:23:39,103 INFO LOGIN_OK ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
-2026-01-23 11:24:02,723 INFO OTP_CREATED ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
-2026-01-23 11:24:02,723 WARNING OTP_EMAIL_FAILED email=guyshalom147258@gmail.com err=EMAIL_ENABLED=0
-2026-01-23 11:24:10,230 INFO LOGIN_OK ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
-2026-01-23 11:26:57,309 INFO OTP_CREATED ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
-2026-01-23 11:26:57,309 WARNING OTP_EMAIL_FAILED email=guyshalom147258@gmail.com err=EMAIL_ENABLED=0
-2026-01-23 11:27:12,560 INFO LOGIN_OK ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
-2026-01-23 11:29:58,249 INFO SIGNUP ip=127.0.0.1 email=guyshalom147258@gmail.com
-2026-01-23 11:30:14,519 INFO OTP_CREATED ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
-2026-01-23 11:30:14,520 WARNING OTP_EMAIL_FAILED email=guyshalom147258@gmail.com err=EMAIL_ENABLED=0
-2026-01-23 11:30:24,878 INFO LOGIN_OK ip=127.0.0.1 email=guyshalom147258@gmail.com user_id=1
+2026-04-26 20:02:00,868 INFO SIGNUP ip=127.0.0.1 email=guyshalom147258@gmail.com
+2026-04-26 20:02:23,716 WARNING LOGIN_FAIL ip=127.0.0.1 email=guyshalom147258@gmail.com
+2026-04-26 20:21:42,699 INFO OTP sent via email to guyshalom147258@gmail.com
+2026-04-26 20:26:44,425 INFO OTP sent via email to guyshalom147258@gmail.com
+2026-04-27 00:26:17,844 INFO OTP sent via email to guyshalom147258@gmail.com
+2026-04-27 00:27:22,869 INFO OTP sent via email to guyshalom147258@gmail.com
+2026-04-27 00:38:33,424 INFO OTP sent via email to guyshalom147258@gmail.com
+2026-04-27 01:18:19,198 INFO OTP sent via email to guyshalom147258@gmail.com
+2026-04-27 01:19:15,648 INFO SIGNUP ip=127.0.0.1 email=something@gmail.com
+2026-04-27 01:19:35,722 INFO OTP sent via email to something@gmail.com
+2026-04-27 01:21:53,070 INFO OTP sent via email to something@gmail.com
+2026-04-27 01:24:41,226 ERROR Failed to send email to guyshalom147258@gmail.com: EMAIL_ENABLED=0
+2026-04-27 01:30:43,002 ERROR Failed to send email to guyshalom147258@gmail.com: EMAIL_ENABLED=0
+2026-04-27 20:12:57,560 ERROR Failed to send email to guyshalom147258@gmail.com: EMAIL_ENABLED=0
+2026-04-27 20:30:55,421 INFO SIGNUP ip=127.0.0.1 email=rojhuygv@gmail.com
+2026-04-27 20:31:20,213 INFO OTP sent via email to rojhuygv@gmail.com
