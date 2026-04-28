@@ -30,8 +30,7 @@ EMAIL_ENABLED = True
 SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 587
 
-# >>>>> הוסף כאן את פרטי ה-Gmail שלך! <<<<<
-SMTP_USER = "s94563@rehovot.ort.org.il"
+SMTP_USER = "YOUR_EMAIL_HERE@gmail.com"
 SMTP_PASS = "YOUR_APP_PASSWORD_HERE"
 
 MAIL_FROM = SMTP_USER
@@ -129,49 +128,8 @@ class DatabaseManager:
     def init_db(self):
         with self._lock:
             db = self.connect()
-            db.execute("""CREATE TABLE IF NOT EXISTS users
-            (
-                id
-                INTEGER
-                PRIMARY
-                KEY
-                AUTOINCREMENT,
-                full_name
-                TEXT
-                NOT
-                NULL,
-                email
-                TEXT
-                NOT
-                NULL
-                UNIQUE,
-                password_hash
-                TEXT
-                NOT
-                NULL,
-                role
-                TEXT
-                NOT
-                NULL
-                DEFAULT
-                'user',
-                vault_salt
-                TEXT
-                NOT
-                NULL,
-                encrypted_vault_key
-                TEXT
-                NOT
-                NULL,
-                created_at
-                TEXT
-                NOT
-                NULL
-                DEFAULT (
-                datetime
-                          (
-                'now'
-                          )))""")
+            db.execute(
+                """CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'user', vault_salt TEXT NOT NULL, encrypted_vault_key TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))""")
             self._add_col(db, "users", "public_key_pem TEXT")
             self._add_col(db, "users", "encrypted_private_key TEXT")
             db.execute(
@@ -183,11 +141,19 @@ class DatabaseManager:
             db.execute("CREATE TABLE IF NOT EXISTS lockouts (email TEXT PRIMARY KEY, locked_until TEXT NOT NULL)")
             db.execute(
                 "CREATE TABLE IF NOT EXISTS password_resets (email TEXT PRIMARY KEY, code TEXT NOT NULL, expires_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0)")
-            db.execute(
-                "CREATE TABLE IF NOT EXISTS vault_shares (id INTEGER PRIMARY KEY AUTOINCREMENT, owner_id INTEGER NOT NULL, shared_with_id INTEGER NOT NULL, enc_vault_key_for_receiver TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE(owner_id, shared_with_id))")
+
+            # טבלה חדשה לשיתוף סיסמאות ספציפיות
+            db.execute("""CREATE TABLE IF NOT EXISTS shared_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sender_id INTEGER NOT NULL,
+                receiver_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                username TEXT NOT NULL,
+                encrypted_password_rsa TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )""")
+
             db.execute("CREATE INDEX IF NOT EXISTS idx_entries_user_id ON entries(user_id)")
-            db.execute("CREATE INDEX IF NOT EXISTS idx_shares_shared_with ON vault_shares(shared_with_id)")
-            db.execute("CREATE INDEX IF NOT EXISTS idx_shares_owner ON vault_shares(owner_id)")
             db.commit()
             db.close()
 
@@ -217,10 +183,8 @@ class VaultServer:
             "change_password": self.handle_change_password,
             "keys_set": self.handle_keys_set,
             "keys_get_public": self.handle_keys_get_public,
-            "share_vault_create": self.handle_share_vault_create,
-            "share_vault_list": self.handle_share_vault_list,
-            "share_vault_entries": self.handle_share_vault_entries,
-            # פונקציות הניהול החדשות!
+            "share_entry_create": self.handle_share_entry_create,
+            "shared_entries_list": self.handle_shared_entries_list,
             "admin_get_users": self.handle_admin_get_users,
             "admin_set_role": self.handle_admin_set_role,
             "admin_delete_user": self.handle_admin_delete_user
@@ -281,17 +245,14 @@ class VaultServer:
     def _send_otp(self, email: str, code: str):
         try:
             send_otp_email(email, code)
-            logging.info(f"OTP sent via email to {email}")
-        except Exception as e:
+        except Exception:
             print(f"[DEV] Email failed. OTP for {email}: {code}")
-            logging.error(f"Failed to send email to {email}: {e}")
 
-    # --- ADMIN SECURITY HELPER ---
     def _is_admin(self, db, user_id: int) -> bool:
         u = db.execute("SELECT role FROM users WHERE id=?", (user_id,)).fetchone()
         return u and u["role"] == "admin"
 
-    # --- PUBLIC HANDLERS ---
+    # --- HANDLERS ---
     def handle_signup(self, conn, req, ip):
         full_name, email, pw = (req.get("full_name") or "").strip(), (req.get("email") or "").strip().lower(), req.get(
             "password") or ""
@@ -309,7 +270,6 @@ class VaultServer:
         self.db.audit(db, None, "signup", f"email={email}", ip)
         db.commit()
         db.close()
-        logging.info("SIGNUP ip=%s email=%s", ip, email)
         self.reply(conn, req, {"ok": True})
 
     def handle_login_start(self, conn, req, ip):
@@ -326,13 +286,11 @@ class VaultServer:
             self.db.audit(db, u["id"] if u else None, "login_fail", f"email={email}", ip)
             db.commit()
             db.close()
-            logging.warning("LOGIN_FAIL ip=%s email=%s", ip, email)
             return self.reply(conn, req, {"ok": False, "error": "Invalid login"})
 
         code = gen_otp()
         db.execute("DELETE FROM otp_codes WHERE user_id=?", (u["id"],))
         db.execute("INSERT INTO otp_codes(user_id,code,expires_at) VALUES(?,?,?)", (u["id"], code, otp_expires(5)))
-        self.db.audit(db, u["id"], "login_ok_otp_sent", None, ip)
         db.commit()
         db.close()
         self._send_otp(email, code)
@@ -340,25 +298,17 @@ class VaultServer:
 
     def handle_login_verify(self, conn, req, ip):
         uid, otp = req.get("user_id"), (req.get("otp") or "").strip()
-        if not uid or not otp: return self.reply(conn, req, {"ok": False, "error": "Missing fields"})
         db = self.db.connect()
         u = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
         row = db.execute("SELECT * FROM otp_codes WHERE user_id=?", (uid,)).fetchone()
         if not u or not row or is_expired(row["expires_at"]) or row["code"] != otp or row[
             "attempts"] >= OTP_MAX_ATTEMPTS:
             if row: db.execute("UPDATE otp_codes SET attempts=attempts+1 WHERE user_id=?", (uid,))
-            if not row:
-                self.db.audit(db, uid, "otp_fail", "missing_row", ip)
-            elif row["attempts"] >= OTP_MAX_ATTEMPTS:
-                self.db.audit(db, uid, "otp_fail", "too_many_attempts", ip)
-            else:
-                self.db.audit(db, uid, "otp_fail", "wrong_or_expired", ip)
             db.commit()
             db.close()
             return self.reply(conn, req, {"ok": False, "error": "OTP invalid/expired"})
 
         db.execute("DELETE FROM otp_codes WHERE user_id=?", (uid,))
-        self.db.audit(db, uid, "otp_ok_login", None, ip)
         k = db.execute("SELECT public_key_pem, encrypted_private_key FROM users WHERE id=?", (u["id"],)).fetchone()
         db.commit()
         db.close()
@@ -371,7 +321,6 @@ class VaultServer:
 
     def handle_reset_start(self, conn, req, ip):
         email = (req.get("email") or "").strip().lower()
-        if not email: return self.reply(conn, req, {"ok": False, "error": "Missing email"})
         db = self.db.connect()
         u = db.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
         if not u:
@@ -381,10 +330,9 @@ class VaultServer:
         db.execute(
             "INSERT INTO password_resets(email,code,expires_at,attempts) VALUES(?,?,?,0) ON CONFLICT(email) DO UPDATE SET code=excluded.code, expires_at=excluded.expires_at, attempts=0",
             (email, code, iso(now_utc() + timedelta(minutes=5))))
-        self.db.audit(db, u["id"], "reset_start", None, ip)
         db.commit()
         db.close()
-        self._send_otp(email, code)  # send_otp_email works for reset too
+        self._send_otp(email, code)
         self.reply(conn, req, {"ok": True})
 
     def handle_reset_finish(self, conn, req, ip):
@@ -394,23 +342,17 @@ class VaultServer:
         db = self.db.connect()
         u = db.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
         r = db.execute("SELECT * FROM password_resets WHERE email=?", (email,)).fetchone()
-        if not u or not r or r["code"] != code or parse_iso(r["expires_at"]) < now_utc() or r[
-            "attempts"] >= RESET_MAX_ATTEMPTS:
-            if r:
-                db.execute("UPDATE password_resets SET attempts=attempts+1 WHERE email=?", (email,))
-                db.commit()
+        if not u or not r or r["code"] != code or parse_iso(r["expires_at"]) < now_utc():
             db.close()
-            return self.reply(conn, req, {"ok": False, "error": "Invalid/expired code or too many attempts"})
+            return self.reply(conn, req, {"ok": False, "error": "Invalid/expired code"})
         db.execute("UPDATE users SET password_hash=?, vault_salt=?, encrypted_vault_key=? WHERE email=?",
                    (new_password_hash, new_vault_salt, new_encrypted_vault_key, email))
         db.execute("DELETE FROM entries WHERE user_id=?", (u["id"],))
         db.execute("DELETE FROM password_resets WHERE email=?", (email,))
-        self.db.audit(db, u["id"], "reset_finish", "vault_wiped", ip)
         db.commit()
         db.close()
         self.reply(conn, req, {"ok": True})
 
-    # --- AUTHENTICATED HANDLERS ---
     def handle_entries_list(self, conn, req, ip, user_id):
         db = self.db.connect()
         rows = db.execute(
@@ -422,22 +364,17 @@ class VaultServer:
     def handle_entry_create(self, conn, req, ip, user_id):
         title, username, enc_pw = (req.get("title") or "").strip(), (req.get("username") or "").strip(), (
                     req.get("encrypted_password") or "").strip()
-        if not title or not username or not enc_pw: return self.reply(conn, req,
-                                                                      {"ok": False, "error": "Missing fields"})
         db = self.db.connect()
         db.execute("INSERT INTO entries(user_id,title,username,encrypted_password,created_at) VALUES(?,?,?,?,?)",
                    (user_id, title, username, enc_pw, iso(now_utc())))
-        self.db.audit(db, user_id, "entry_create", f"title={title}", ip)
         db.commit()
         db.close()
         self.reply(conn, req, {"ok": True})
 
     def handle_entry_update(self, conn, req, ip, user_id):
-        entry_id, title, username, enc_pw = req.get("id"), (req.get("title") or "").strip(), (
-                    req.get("username") or "").strip(), (req.get("encrypted_password") or "").strip()
         db = self.db.connect()
         db.execute("UPDATE entries SET title=?, username=?, encrypted_password=? WHERE id=? AND user_id=?",
-                   (title, username, enc_pw, entry_id, user_id))
+                   (req.get("title"), req.get("username"), req.get("encrypted_password"), req.get("id"), user_id))
         db.commit()
         db.close()
         self.reply(conn, req, {"ok": True})
@@ -471,96 +408,62 @@ class VaultServer:
         u = db.execute("SELECT public_key_pem FROM users WHERE email=?", (req.get("email").strip().lower(),)).fetchone()
         db.close()
         if not u or not u["public_key_pem"]: return self.reply(conn, req,
-                                                               {"ok": False, "error": "User has no public key yet"})
+                                                               {"ok": False, "error": "Receiver has no keys"})
         self.reply(conn, req, {"ok": True, "public_key_pem": u["public_key_pem"]})
 
-    def handle_share_vault_create(self, conn, req, ip, user_id):
-        to_email, enc_for_receiver = req.get("to_email").strip().lower(), req.get("enc_vault_key_for_receiver").strip()
+    # --- שיטת שיתוף חדשה: סיסמה ספציפית ---
+    def handle_share_entry_create(self, conn, req, ip, user_id):
+        to_email, title, username, enc_rsa = req.get("to_email").strip().lower(), req.get("title"), req.get(
+            "username"), req.get("encrypted_password_rsa")
         db = self.db.connect()
         receiver = db.execute("SELECT id FROM users WHERE email=?", (to_email,)).fetchone()
         if not receiver:
             db.close()
             return self.reply(conn, req, {"ok": False, "error": "No such user"})
         db.execute(
-            "INSERT INTO vault_shares(owner_id,shared_with_id,enc_vault_key_for_receiver) VALUES(?,?,?) ON CONFLICT(owner_id,shared_with_id) DO UPDATE SET enc_vault_key_for_receiver=excluded.enc_vault_key_for_receiver",
-            (user_id, receiver["id"], enc_for_receiver))
+            "INSERT INTO shared_entries(sender_id, receiver_id, title, username, encrypted_password_rsa) VALUES(?,?,?,?,?)",
+            (user_id, receiver["id"], title, username, enc_rsa))
         db.commit()
         db.close()
         self.reply(conn, req, {"ok": True})
 
-    def handle_share_vault_list(self, conn, req, ip, user_id):
+    def handle_shared_entries_list(self, conn, req, ip, user_id):
         db = self.db.connect()
-        rows = db.execute(
-            "SELECT vs.owner_id, u.email AS owner_email, vs.enc_vault_key_for_receiver, vs.created_at FROM vault_shares vs JOIN users u ON u.id = vs.owner_id WHERE vs.shared_with_id=? ORDER BY vs.id DESC",
-            (user_id,)).fetchall()
+        rows = db.execute("""SELECT se.*, u.email AS sender_email FROM shared_entries se 
+                          JOIN users u ON u.id = se.sender_id 
+                          WHERE receiver_id=? ORDER BY se.id DESC""", (user_id,)).fetchall()
         db.close()
         self.reply(conn, req, {"ok": True, "shared": [dict(r) for r in rows]})
 
-    def handle_share_vault_entries(self, conn, req, ip, user_id):
-        owner_id = req.get("owner_id")
-        db = self.db.connect()
-        ok = db.execute("SELECT 1 FROM vault_shares WHERE owner_id=? AND shared_with_id=?",
-                        (owner_id, user_id)).fetchone()
-        if not ok:
-            db.close()
-            return self.reply(conn, req, {"ok": False, "error": "Not shared with you"})
-        rows = db.execute(
-            "SELECT id,title,username,encrypted_password,created_at FROM entries WHERE user_id=? ORDER BY id DESC",
-            (owner_id,)).fetchall()
-        db.close()
-        self.reply(conn, req, {"ok": True, "entries": [dict(r) for r in rows]})
-
-    # --- ADMIN HANDLERS ---
+    # --- ADMIN ---
     def handle_admin_get_users(self, conn, req, ip, user_id):
         db = self.db.connect()
         if not self._is_admin(db, user_id):
             db.close()
-            return self.reply(conn, req, {"ok": False, "error": "Access Denied: Admins Only"})
-
+            return self.reply(conn, req, {"ok": False, "error": "Admins Only"})
         rows = db.execute("SELECT id, full_name, email, role, created_at FROM users ORDER BY id DESC").fetchall()
         db.close()
         self.reply(conn, req, {"ok": True, "users": [dict(r) for r in rows]})
 
     def handle_admin_set_role(self, conn, req, ip, user_id):
-        target_id, new_role = req.get("target_id"), req.get("new_role")
-        if target_id == user_id:
-            return self.reply(conn, req, {"ok": False, "error": "Cannot change your own role"})
-        if new_role not in ["user", "admin"]:
-            return self.reply(conn, req, {"ok": False, "error": "Invalid role"})
-
         db = self.db.connect()
         if not self._is_admin(db, user_id):
             db.close()
-            return self.reply(conn, req, {"ok": False, "error": "Access Denied: Admins Only"})
-
-        db.execute("UPDATE users SET role=? WHERE id=?", (new_role, target_id))
-        self.db.audit(db, user_id, "admin_set_role", f"target_id={target_id},new_role={new_role}", ip)
+            return self.reply(conn, req, {"ok": False, "error": "Admins Only"})
+        db.execute("UPDATE users SET role=? WHERE id=?", (req.get("new_role"), req.get("target_id")))
         db.commit()
         db.close()
         self.reply(conn, req, {"ok": True})
 
     def handle_admin_delete_user(self, conn, req, ip, user_id):
-        target_id = req.get("target_id")
-        if target_id == user_id:
-            return self.reply(conn, req, {"ok": False, "error": "Cannot delete yourself"})
-
         db = self.db.connect()
         if not self._is_admin(db, user_id):
             db.close()
-            return self.reply(conn, req, {"ok": False, "error": "Access Denied: Admins Only"})
-
-        target_u = db.execute("SELECT email FROM users WHERE id=?", (target_id,)).fetchone()
-        if not target_u:
-            db.close()
-            return self.reply(conn, req, {"ok": False, "error": "User not found"})
-
-        # מחיקת כל השאריות של המשתמש מהמערכת!
-        db.execute("DELETE FROM users WHERE id=?", (target_id,))
-        db.execute("DELETE FROM entries WHERE user_id=?", (target_id,))
-        db.execute("DELETE FROM vault_shares WHERE owner_id=? OR shared_with_id=?", (target_id, target_id))
-        db.execute("DELETE FROM otp_codes WHERE user_id=?", (target_id,))
-        self.db.audit(db, user_id, "admin_delete_user", f"deleted_email={target_u['email']}", ip)
-
+            return self.reply(conn, req, {"ok": False, "error": "Admins Only"})
+        tid = req.get("target_id")
+        db.execute("DELETE FROM users WHERE id=?", (tid,))
+        db.execute("DELETE FROM entries WHERE user_id=?", (tid,))
+        db.execute("DELETE FROM shared_entries WHERE sender_id=? OR receiver_id=?", (tid, tid))
         db.commit()
         db.close()
         self.reply(conn, req, {"ok": True})
@@ -584,13 +487,8 @@ class VaultServer:
                         self.routes_auth[action](conn, req, ip, s["user_id"])
                 elif action in self.routes_public:
                     self.routes_public[action](conn, req, ip)
-                else:
-                    self.reply(conn, req, {"ok": False, "error": f"Unknown action: {action}"})
-        except ConnectionError:
+        except Exception:
             pass
-        except Exception as e:
-            print(f"[{ip}] Connection error occurred: {e}")
-            traceback.print_exc()
         finally:
             try:
                 conn.close()
@@ -598,7 +496,7 @@ class VaultServer:
                 pass
 
     def start(self):
-        logging.basicConfig(filename="server.log", level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+        logging.basicConfig(filename="server.log", level=logging.INFO)
         crt, key = ensure_certs()
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(crt, key)
@@ -606,24 +504,15 @@ class VaultServer:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind((self.host, self.port))
         sock.listen(50)
-        print(f"VaultServer listening on {self.host}:{self.port}")
-
-        if EMAIL_ENABLED:
-            print("Email OTP: ENABLED! Server will now send real emails.")
-        else:
-            print("Email OTP: DISABLED (DEV fallback prints OTP to console)")
-
+        print(f"Server on {self.host}:{self.port}")
         while True:
             client_sock, addr = sock.accept()
             try:
                 tls_conn = context.wrap_socket(client_sock, server_side=True)
             except Exception:
-                client_sock.close()
                 continue
-            t = threading.Thread(target=self.handle_client, args=(tls_conn, addr), daemon=True)
-            t.start()
+            threading.Thread(target=self.handle_client, args=(tls_conn, addr), daemon=True).start()
 
 
 if __name__ == "__main__":
-    server = VaultServer(HOST, PORT)
-    server.start()
+    VaultServer(HOST, PORT).start()

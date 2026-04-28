@@ -14,3 +14,8 @@
 2026-04-27 20:12:57,560 ERROR Failed to send email to guyshalom147258@gmail.com: EMAIL_ENABLED=0
 2026-04-27 20:30:55,421 INFO SIGNUP ip=127.0.0.1 email=rojhuygv@gmail.com
 2026-04-27 20:31:20,213 INFO OTP sent via email to rojhuygv@gmail.com
+2026-04-28 10:17:44,373 INFO OTP sent via email to guyshalom147258@gmail.com
+2026-04-28 10:21:30,987 INFO OTP sent via email to something@gmail.com
+2026-04-28 10:24:17,755 INFO OTP sent via email to guyshalom147258@gmail.com
+2026-04-28 10:25:32,367 INFO OTP sent via email to something@gmail.com
+2026-04-28 10:26:55,384 WARNING LOGIN_FAIL ip=127.0.0.1 email=something@gmail.com

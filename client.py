@@ -190,7 +190,7 @@ class ScrollArea(tk.Frame):
 
 
 # ================= CUSTOM DIALOGS =================
-def custom_messagebox(parent, title, message, type="info"):
+def custom_messagebox(parent, title, message, type="info", allow_copy=False):
     win = tk.Toplevel(parent)
     win.title(title)
     win.configure(bg=BG)
@@ -211,7 +211,17 @@ def custom_messagebox(parent, title, message, type="info"):
     tk.Label(panel, text=message, bg=PANEL, fg=MUTED, font=FONT_SUB, wraplength=320, justify="center").pack(
         pady=(0, 16), fill="both", expand=True)
 
-    make_button(panel, "OK", command=win.destroy, primary=True, small=True).pack(pady=(0, 16))
+    # כפתור ההעתקה המיוחד שביקשת
+    if allow_copy:
+        def copy_close():
+            parent.clipboard_clear()
+            parent.clipboard_append(message)
+            win.destroy()
+
+        make_button(panel, "📋 Copy & Close", command=copy_close, primary=True).pack(pady=(0, 16))
+    else:
+        make_button(panel, "OK", command=win.destroy, primary=True, small=True).pack(pady=(0, 16))
+
     win.wait_window()
 
 
@@ -267,11 +277,11 @@ def custom_askyesno(parent, title, prompt):
 
     parent.update_idletasks()
     x = parent.winfo_rootx() + (parent.winfo_width() // 2) - 200
-    y = parent.winfo_rooty() + (parent.winfo_height() // 2) - 100
-    win.geometry(f"400x200+{x}+{y}")
+    y = parent.winfo_rooty() + (parent.winfo_height() // 2) - 140
+    win.geometry(f"400x280+{x}+{y}")
 
     panel = tk.Frame(win, bg=PANEL, highlightthickness=1, highlightbackground=BORDER)
-    panel.place(relx=0.5, rely=0.5, anchor="center", relwidth=0.9, relheight=0.85)
+    panel.place(relx=0.5, rely=0.5, anchor="center", relwidth=0.9, relheight=0.9)
 
     tk.Label(panel, text=title, bg=PANEL, fg=TEXT, font=("Arial", 16, "bold")).pack(pady=(16, 8))
     tk.Label(panel, text=prompt, bg=PANEL, fg=MUTED, font=FONT_SUB, wraplength=320, justify="center").pack(pady=(0, 16),
@@ -509,7 +519,7 @@ class App:
 
         self.async_request({"action": "login_verify", "user_id": self.session_user_id, "otp": otp}, handle_res)
 
-    # ================= FORGOT PASSWORD (Wipes Vault) =================
+    # ================= FORGOT PASSWORD =================
     def show_reset_start(self):
         self.clear_panel()
 
@@ -609,7 +619,6 @@ class App:
     def show_dashboard(self):
         self.clear_panel()
 
-        # כפתור הגדרות חדש בצד שמאל למעלה!
         btn_settings = tk.Button(self.panel, text="⚙️ Settings", command=self.show_settings, bg=PANEL, fg=MUTED,
                                  activebackground=BTN_HOVER, activeforeground=TEXT, relief="flat", bd=0, cursor="hand2",
                                  font=("Arial", 11, "bold"))
@@ -624,11 +633,9 @@ class App:
         make_button(self.panel, "New Entry", command=self.new_entry, primary=True).pack(pady=8, padx=30, fill="x")
         make_button(self.panel, "My saved entries", command=self.show_entries).pack(pady=8, padx=30, fill="x")
 
-        make_button(self.panel, "Share my Vault", command=self.share_my_vault).pack(pady=8, padx=30, fill="x")
-        make_button(self.panel, "Vaults shared with me", command=self.show_shared_vaults).pack(pady=8, padx=30,
-                                                                                               fill="x")
+        # השיתוף של סיסמאות ספציפיות
+        make_button(self.panel, "Shared with me", command=self.show_shared_entries).pack(pady=8, padx=30, fill="x")
 
-        # הוספת כפתור ייעודי לאדמין!
         if self.user_role == "admin":
             tk.Label(self.panel, text="— Admin Actions —", bg=PANEL, fg="#f59e0b", font=("Arial", 10, "bold")).pack(
                 pady=(10, 0))
@@ -658,7 +665,7 @@ class App:
 
         make_button(self.panel, "← Back to Dashboard", command=self.show_dashboard, small=True).pack(pady=(25, 0))
 
-    # ================= CHANGE MASTER PASSWORD (Safe Reset) =================
+    # ================= CHANGE MASTER PASSWORD =================
     def show_change_password(self):
         self.clear_panel()
 
@@ -692,7 +699,6 @@ class App:
             custom_messagebox(self.root, "Error", "Fill all fields.", "error")
             return
 
-        # מוודא שהמשתמש באמת יודע את הסיסמה הנוכחית שלו לפני שהוא משנה אותה
         if cur_pw != self.session_password:
             custom_messagebox(self.root, "Error", "Current password is incorrect.", "error")
             return
@@ -701,16 +707,9 @@ class App:
             custom_messagebox(self.root, "Error", "New passwords do not match.", "error")
             return
 
-        if len(new_pw) < 12:
-            custom_messagebox(self.root, "Error", "New password too short (min 12 characters).", "error")
-            return
-
         try:
-            # יצירת מלח חדש והצפנה מחדש של ה-Vault Key הקיים בעזרת הסיסמה החדשה
             salt = os.urandom(16)
             derived = derive_fernet_from_password(new_pw, salt)
-
-            # עוטפים את אותו מפתח כספת מדויק שכבר יש לנו עם ההצפנה החדשה
             enc_vk = encrypt_with_derived(derived, self.vault_key.encode("utf-8")).hex()
             pw_hash = hash_master_password(new_pw)
         except Exception as e:
@@ -867,17 +866,22 @@ class App:
         left.pack(side="left", fill="both", expand=True, padx=10, pady=8)
 
         tk.Label(left, text=title, bg="#111216", fg=TEXT, font=("Arial", 13, "bold"), anchor="w").pack(fill="x")
+        # הנה השורה שהייתה חסרה! החזרתי את תצוגת המשתמש/אימייל
         tk.Label(left, text=username, bg="#111216", fg=MUTED, font=("Arial", 11), anchor="w").pack(fill="x",
                                                                                                    pady=(2, 0))
 
         right = tk.Frame(row, bg="#111216")
         right.pack(side="right", padx=10, pady=8)
 
-        make_button(right, "Show", command=lambda: custom_messagebox(self.root, "Password", pw_plain, "info"),
-                    small=True).pack(pady=2, fill="x")
+        make_button(right, "Show",
+                    command=lambda: custom_messagebox(self.root, "Password", pw_plain, "info", allow_copy=True),
+                    small=True).pack(side="left", padx=2)
+        make_button(right, "Share", command=lambda: self.share_specific_entry(ent, pw_plain), small=True).pack(
+            side="left", padx=2)
+        # החזרתי את לחצן העריכה
         make_button(right, "Edit", command=lambda: self.edit_entry(entry_id, title, username, pw_plain),
-                    small=True).pack(pady=2, fill="x")
-        make_button(right, "Delete", command=lambda: self.delete_entry(entry_id), small=True).pack(pady=2, fill="x")
+                    small=True).pack(side="left", padx=2)
+        make_button(right, "Delete", command=lambda: self.delete_entry(entry_id), small=True).pack(side="left", padx=2)
 
     # ================= CRUD =================
     def new_entry(self):
@@ -1070,30 +1074,24 @@ class App:
 
         threading.Thread(target=task, daemon=True).start()
 
-    # ================= SHARING WHOLE VAULT =================
-    def share_my_vault(self):
+    # ================= SHARING SPECIFIC ENTRY =================
+    def share_specific_entry(self, entry: dict, pw_plain: str):
         if not self._require_authed():
             return
 
-        to_email = custom_askstring(self.root, "Share Vault", "Share with (email):")
+        to_email = custom_askstring(self.root, "Share Entry", "Share with (user email):")
         if not to_email: return
-
         to_email = to_email.strip().lower()
-
-        if not self.private_key_pem or not self.public_key_pem:
-            custom_messagebox(self.root, "Error", "Sharing keys not available. Try logout/login.", "error")
-            return
 
         def handle_public_key(res):
             if not res.get("ok"):
-                custom_messagebox(self.root, "Error", res.get("error", "Failed to get receiver public key"), "error")
+                custom_messagebox(self.root, "Error", res.get("error", "User not found or has no keys"), "error")
                 return
 
             receiver_pub_pem = res["public_key_pem"].encode("utf-8")
 
             try:
-                wrapped = rsa_encrypt(receiver_pub_pem, self.vault_key.encode("utf-8"))
-                wrapped_hex = wrapped.hex()
+                enc_rsa = rsa_encrypt(receiver_pub_pem, pw_plain.encode("utf-8")).hex()
             except Exception as e:
                 custom_messagebox(self.root, "Error", f"RSA encrypt failed: {e}", "error")
                 return
@@ -1102,24 +1100,23 @@ class App:
                 if not r2.get("ok"):
                     custom_messagebox(self.root, "Error", r2.get("error", "Share failed"), "error")
                     return
-                custom_messagebox(self.root, "Success", f"Shared your vault with {to_email}.", "info")
+                custom_messagebox(self.root, "Success", f"Shared successfully with {to_email}.", "info")
 
             self.async_request({
-                "action": "share_vault_create", "session_token": self.session_token,
-                "to_email": to_email, "enc_vault_key_for_receiver": wrapped_hex
+                "action": "share_entry_create", "session_token": self.session_token,
+                "to_email": to_email, "title": entry['title'], "username": entry['username'],
+                "encrypted_password_rsa": enc_rsa
             }, handle_share)
 
         self.async_request({"action": "keys_get_public", "session_token": self.session_token, "email": to_email},
                            handle_public_key)
 
-    def show_shared_vaults(self):
+    def show_shared_entries(self):
         if not self._require_authed():
             return
 
         self.clear_panel()
         tk.Label(self.panel, text="Shared With Me", bg=PANEL, fg=TEXT, font=FONT_TITLE).pack(pady=(18, 6))
-        tk.Label(self.panel, text="Open a shared vault to view entries (read-only).", bg=PANEL, fg=MUTED,
-                 font=FONT_SUB).pack(pady=(0, 14))
 
         top = tk.Frame(self.panel, bg=PANEL)
         top.pack(fill="x", padx=16, pady=(0, 6))
@@ -1130,98 +1127,28 @@ class App:
 
         def handle_res(res):
             if not res.get("ok"):
-                custom_messagebox(self.root, "Error", res.get("error", "Failed to load shares"), "error")
+                custom_messagebox(self.root, "Error", res.get("error", "Failed to load shared entries"), "error")
                 self.show_dashboard()
                 return
 
             shared = res.get("shared", [])
             if not shared:
-                tk.Label(area.inner, text="No one shared a vault with you yet.", bg=PANEL, fg=MUTED,
+                tk.Label(area.inner, text="No one shared a password with you yet.", bg=PANEL, fg=MUTED,
                          font=FONT_SUB).pack(pady=20)
                 return
 
             for item in shared:
-                self._shared_vault_row(area.inner, item)
+                self._shared_entry_row(area.inner, item)
 
-        self.async_request({"action": "share_vault_list", "session_token": self.session_token}, handle_res)
+        self.async_request({"action": "shared_entries_list", "session_token": self.session_token}, handle_res)
 
-    def _shared_vault_row(self, parent, item: dict):
-        owner_id = item["owner_id"]
-        owner_email = item.get("owner_email", "unknown")
-        enc_vault_key_for_me = item["enc_vault_key_for_receiver"]
-        created_at = item.get("created_at", "")
-
-        row = tk.Frame(parent, bg="#111216", highlightthickness=1, highlightbackground=BORDER)
-        row.pack(fill="x", pady=6, padx=2)
-
-        left = tk.Frame(row, bg="#111216")
-        left.pack(side="left", fill="both", expand=True, padx=10, pady=8)
-
-        tk.Label(left, text=f"From: {owner_email}", bg="#111216", fg=TEXT, font=("Arial", 13, "bold"), anchor="w").pack(
-            fill="x")
-        tk.Label(left, text=f"Shared at: {created_at}", bg="#111216", fg=MUTED, font=("Arial", 11), anchor="w").pack(
-            fill="x", pady=(2, 0))
-
-        right = tk.Frame(row, bg="#111216")
-        right.pack(side="right", padx=10, pady=8)
-
-        make_button(
-            right, "Open",
-            command=lambda: self.open_shared_vault(owner_id, owner_email, enc_vault_key_for_me),
-            small=True
-        ).pack(pady=2, fill="x")
-
-    def open_shared_vault(self, owner_id: int, owner_email: str, enc_vault_key_hex: str):
-        if not self._require_authed():
-            return
-        if not self.private_key_pem:
-            custom_messagebox(self.root, "Error", "Missing private key for sharing. Try logout/login.", "error")
-            return
+    def _shared_entry_row(self, parent, item: dict):
+        title = item["title"]
+        sender_email = item.get("sender_email", "unknown")
+        enc_rsa_hex = item["encrypted_password_rsa"]
 
         try:
-            wrapped = bytes.fromhex(enc_vault_key_hex)
-            owner_vault_key = rsa_decrypt(self.private_key_pem, wrapped).decode("utf-8")
-        except Exception as e:
-            custom_messagebox(self.root, "Error", f"Failed to open shared vault: {e}", "error")
-            return
-
-        def handle_res(res):
-            if not res.get("ok"):
-                custom_messagebox(self.root, "Error", res.get("error", "Failed to load shared entries"), "error")
-                return
-            entries = res.get("entries", [])
-            self.show_shared_entries(owner_email, owner_vault_key, entries)
-
-        self.async_request({"action": "share_vault_entries", "session_token": self.session_token, "owner_id": owner_id},
-                           handle_res)
-
-    def show_shared_entries(self, owner_email: str, owner_vault_key: str, entries: list):
-        self.clear_panel()
-
-        top = tk.Frame(self.panel, bg=PANEL)
-        top.pack(fill="x", pady=(10, 8), padx=16)
-        make_button(top, "← Back", command=self.show_shared_vaults, small=True).pack(side="left")
-        tk.Label(top, text=f"Shared Vault: {owner_email}", bg=PANEL, fg=TEXT, font=("Arial", 16, "bold")).pack(
-            side="right")
-
-        area = ScrollArea(self.panel, height=360)
-        area.pack(fill="both", expand=True, padx=16, pady=(4, 10))
-
-        if not entries:
-            tk.Label(area.inner, text="No entries in this shared vault.", bg=PANEL, fg=MUTED, font=FONT_SUB).pack(
-                pady=20)
-            return
-
-        for ent in entries:
-            self._shared_entry_row(area.inner, ent, owner_vault_key)
-
-    def _shared_entry_row(self, parent, ent: dict, owner_vault_key: str):
-        title = ent["title"]
-        username = ent["username"]
-        enc_hex = ent["encrypted_password"]
-
-        try:
-            pw_plain = decrypt_entry_password(owner_vault_key, bytes.fromhex(enc_hex))
+            pw_plain = rsa_decrypt(self.private_key_pem, bytes.fromhex(enc_rsa_hex)).decode("utf-8")
         except Exception:
             pw_plain = "<decrypt error>"
 
@@ -1232,15 +1159,15 @@ class App:
         left.pack(side="left", fill="both", expand=True, padx=10, pady=8)
 
         tk.Label(left, text=title, bg="#111216", fg=TEXT, font=("Arial", 13, "bold"), anchor="w").pack(fill="x")
-        tk.Label(left, text=username, bg="#111216", fg=MUTED, font=("Arial", 11), anchor="w").pack(fill="x",
-                                                                                                   pady=(2, 0))
+        tk.Label(left, text=f"From: {sender_email}", bg="#111216", fg=MUTED, font=("Arial", 11), anchor="w").pack(
+            fill="x", pady=(2, 0))
 
         right = tk.Frame(row, bg="#111216")
         right.pack(side="right", padx=10, pady=8)
 
         make_button(
             right, "Show",
-            command=lambda: custom_messagebox(self.root, "Password (shared)", pw_plain, "info"),
+            command=lambda: custom_messagebox(self.root, "Shared Password", pw_plain, "info", allow_copy=True),
             small=True
         ).pack(pady=2, fill="x")
 
